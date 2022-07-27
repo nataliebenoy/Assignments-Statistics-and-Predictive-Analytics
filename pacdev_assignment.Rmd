@@ -1,0 +1,249 @@
+---
+title: "PacDev Home Price Analysis"
+author: "Natalie Benoy"
+date: "11/6/21"
+output: 
+  html_document:
+    toc: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+
+```
+
+<!-- Note:   -->
+
+<!-- These instructions are commented out and will not display when you knit your RMarkdown document. -->
+
+<!-- - Change the information in the yaml header above:  title, author, data. -->
+<!-- - Make sure output is html_document. -->
+<!-- - Once you are finished coding, **run each chunk individually to make sure there are no errors**.  (If necessary fix your code.) Once your code is error-free, click "knit" on the menu above. Your document should compile to HTML, provided that you have output set to "html_document." -->
+<!-- - In the code chunk above ("setup") echo is set to TRUE.  This means that the code in your chunks will be displayed, along with the results, in your compiled document. -->
+
+## Load data and packages
+
+```{r}
+library(tidyverse)
+d <- read_csv("LAHomes.csv")
+
+glimpse(d)
+
+summary(d)
+
+```
+
+Data dictionary:
+- city: name of city
+- type:  type of dwelling, SFR or Condo/Twh
+- bed:  number of bedrooms
+- bath: number of baths
+- garage: size of garage (number of cars)
+- sqft: size of dwelling
+- pool:  indicator for pool
+- spa: indicator for spa
+- price: sales price
+
+## Cleaning
+
+There are clearly data problems. We have some data issues we need to address before we get started with EDA, chiefly related to missing data in the following fields:  spa, pool, type, and garage. Here are the issues:
+
+1. `spa`. All missing.
+
+```{r}
+table(d$spa, useNA = "always") 
+```
+
+2. `pool`. Pool has 1448 NAs.  NA probably means no pool?  Hard to know for sure.
+
+```{r}
+table(d$pool, useNA = "always")
+```
+
+3. `type`. Type has 39 NAs, which may be missing data (at least that is how we will interpret it.)
+
+```{r}
+table(d$type, useNA = "always")
+```
+
+4. `garage`. Garage has 625 NAs, which probably means no garage?  
+
+```{r}
+table(d$garage, useNA = "always")
+
+```
+
+We will learn how to impute NAs later; for now we will allow `lm()` to remove these observations. Let's do some necessary recoding, given these (possibly imperfect) data modeling decisions:
+
+1. Clearly we can just remove `spa`. 
+2. Recode NAs in `pool` as "N," to be consistent with "Y." Make it into a factor.
+3. We will simply eliminate the empty rows of `type` when using that predictor in a model; to do so we can just leave the NAs alone (because `lm()` will automatically ignore NAs).
+4. Recode empty garage as "0"---a character variable---and make it into a factor variable.
+5. Make city and type into factors.
+
+```{r}
+
+d <- d %>% 
+  dplyr::select(-spa) %>% 
+  mutate(pool = ifelse(is.na(pool), "N", "Y") %>% factor,
+        garage = ifelse(is.na(garage), "0", garage) %>% factor,
+        city = factor(city),
+        type = factor(type))
+
+
+glimpse(d)
+summary(d)
+```
+
+
+## Questions
+
+## Q1
+
+Modeling price data often requires log transformation.  Why?  Log transformation compresses right skewed data and helps the linear model fit better.   The function we often use in R for log transformation, `log(x)`, uses the natural log.  (`log2(x)` will compute log base 2.) Let's look at a plot of `sqft` and `price`:
+
+```{r}
+
+ggplot(d, aes(sqft, price)) +
+  geom_point() +
+  theme_minimal() +
+  stat_smooth(method="lm", se = F) +
+  labs(title = "price ~ sqft")
+
+```
+
+The problem with price is that it spans many orders of magnitude, especially in Beverly Hills.
+
+```{r}
+
+ggplot(d, aes(sqft, price)) +
+  geom_point() +
+  theme_minimal() +
+  facet_wrap(~city) +
+  stat_smooth(method="lm", se = F) +
+  labs(title = "price ~ sqft, varying by city")
+
+```
+
+After log transformation of price, each fixed distance represents a multiplication (not an addition) of the value.
+
+```{r}
+
+ggplot(d, aes(sqft, log(price))) +
+  geom_point() +
+  theme_minimal() +
+  stat_smooth(method="lm", se = F) +
+  labs(title = "log(price) ~ sqft")
+
+```
+
+That doesn't look quite right.  The problem is that `sqft` is also right skewed. So, let's log transform `sqft` as well.  
+
+Create a plot of log `price` against log `sqft`, with a least squares summary line (called a log-log model), and comment on this model's fit to the data. 
+
+```{r}
+# plot log(price) ~ log(sqft) using LM
+ggplot(d, aes(log(sqft), log(price))) +
+  geom_point() +
+  geom_smooth(method = "lm", se = F) +
+  theme_minimal() +
+  labs(title = "log(price) ~ log(sqft)")
+
+```
+
+> Answer: When both the independent variable sqft and the dependent variable price are log transformed, they display a more linear relationship and are therefore better candidates for linear regression (will better fit a linear model) than the non-log-transformed versions of those variables.
+
+## Q2
+
+Fit a log-log simple regression model: regress `log(price)` (the outcome) on `log(sqft)` (the predictor).  Report and interpret the coefficient for `log(sqft)`.
+
+```{r}
+# fit simple log-log regression model
+(log_log_model <- lm(log(price) ~ log(sqft), data = d)) %>%
+  summary()
+```
+
+> Answer: Since we have created a log-log model, we can say that on average, a 1% increase in sqft is associated with a 1.44% increase in price. This coefficient for sqft (1.44) is statistically significant at the p < .001 level.
+
+## Q3
+
+We have been assuming, based on the plotting we did, that these log transformations have improved the model.  Show, empirically, that they have.  Fit two models: 
+
+1. price ~ sqft, 
+2. log(price) ~ log(sqft).  
+
+Calculate and report RMSE and $R^2$ for each model.
+
+```{r}
+# fit price ~ sqft model
+(simple_model <- lm(price ~ sqft, data = d)) %>%
+  summary()
+
+# fit log(price) ~ log(sqft) model
+(log_log_model <- lm(log(price) ~ log(sqft), data = d)) %>%
+  summary()
+
+# Create RMSE function
+rmse <- function(actual, fitted) sqrt(mean((actual - fitted)^2))
+
+# RMSE for log-log model
+rmse(d$price, exp(fitted(log_log_model)))
+
+# RMSE for non-log model
+rmse(d$price, fitted(simple_model))
+
+```
+> Answer: Based on the adjusted R^2 values for the two models, the log-log model explains more of the variation between sqft and price (R^2 = 0.77) than the unlogged model (R^2 = 0.73).
+
+> The calculated RMSE for the log-log model is 1788187, which is lower than the calculated RMSE of the unlogged model, at 1857904. Lower RMSE is indicative of a better model, thus both the adjusted R^2 and RMSE show that the log-log model is the better one.
+
+## Q4
+
+Does the relationship between `price` and `sqft` vary by city?  Fit a model of `log(price)` with an interaction between `log(sqft)` and `city`.  Create a plot of this interaction between `city` and `sqft` with summary least squares lines. Remember that Beverly Hills will be the reference category in the model, assuming you have allowed the lm() function assign factor levels alphabetically.  Therefore, all of the city coefficients will represent change in average log price for each city, in comparison to Beverly Hills.  
+
+Comment on the meaning of the plot.  Is there an interaction?
+
+```{r}
+# Regression
+(interaction_model <- lm(log(price) ~ city * log(sqft), data = d)) %>%
+  summary()
+
+```
+
+```{r}
+# Plot of interaction (colorful!)
+ggplot(d, aes(log(sqft), log(price))) + theme_minimal() + geom_jitter(aes(col = city)) + geom_smooth(method = "lm", se = F, aes(col = city)) + labs(title = "log(price) ~ log(sqft) * city")
+
+# Alternate plot of interaction (not colorful)
+ggplot(d, aes(log(sqft), log(price))) + theme_minimal() + geom_jitter() + geom_smooth(method = "lm", se = F) + labs(title = "log(price) ~ log(sqft) by city") + facet_wrap(~city)
+
+```
+
+> Answer: The plots of the relationship between log(price) and log(sqft) by city indicate there is a slight interaction between sqft and city on price, although this interaction is not statistically significant for Long Beach as compared to Beverly Hills.
+
+> From the coefficients given by the model, we can say that a 1% increase in sqft for a home in Santa Monica is associated with a 0.21% decrease in price compared to Beverly Hills. Similarly, a 1% increase in sqft for a home in Westwood is associated with a 0.36% decrease in price compared to Beverly Hills. Both of these interactions are statistically significant at the p < .01 level. For Long Beach, the coefficient indicates a 1% increase in sqft is associated with a 0.015% decrease in price compared to Beverly Hills, though this coefficient is not statistically significant. From this we can conclude that a comparable increase in sqft increases home price more for homes in Beverly Hills than in Santa Monica or Westwood, and comparably for Long Beach.
+
+## Q5
+
+What should Andrew say in his presentation? Write a brief summary of the quanitative evidence that he should use to support this recommendation. Make sure to discuss specific details from your answers to Q1 - Q4.
+
+```{r}
+# Additional data: 95% confidence intervals for Beverly Hills and Santa Monica, also other relevant benchmarks
+1.21 - 1.96 * .04 # BH CI lower
+1.21 + 1.96 * .04 # BH CI upper
+
+-.21 - 1.96 * .06 # SM CI lower
+-.21 + 1.96 * .06 # SM CI upper
+
+d %>%
+  group_by(city) %>%
+  summarize(median_price = median(price),
+            median_sqft = median(sqft))
+
+```
+
+> Answer: Given PacDev's business model of remodelling and reselling homes with a focus on increasing square footage, we recommend PacDev prioritize homes in the communities of Beverly Hills and Long Beach over those in Santa Monica and Westwood. Square footage is an important contributor to home sale price; an initial analysis found that on average, a 1% increase in square footage was associated with a 1.44% increase in sale price. This result was statistically significant at the p < .001 level. Due to large data ranges for both price and sqft, we opted for a log-log regression model (log(price) explained by log(sqft)) over a non-log model -- our log-log model had a higher R^2 value (0.77 vs. 0.73) and a lower RMSE (1788187 vs. 1857904), both of which indicate the log-log model as the better option.
+
+> While a 1% increase in sqft was associated with a 1.44% increase in price in our initial model, we found the effect of increased square footage on price differed somewhat by city. This interaction model had an adjusted R^2 of 0.88, an improvement over the previous model's R^2 value of 0.77. Beverly Hills had the highest return on sqft -- while a 1% increase in sqft on a Beverly Hills home added 1.21% to sale price on average, a comparable increase in sqft on a home in Santa Monica or Westwood adds 0.21% and 0.36% less to sale price compared to Beverly Hills. The effect of sqft on price in Long Beach was very slightly negative compared to Beverly Hills (a .015% reduction); this result was not statistically significant, therefore the effect of sqft on price for homes in Long Beach should be considered comparable to Beverly Hills.
+
+> Based on our model, if we were to increase the footprint of a 2,000-sqft, $1,000,000 single-family home in Beverly Hills by 20%, we could expect to sell the home for between $1,226,000 and $1,257,600, a return of between 22.6% and 25.76%. If PacDev were to do the same for a home in Santa Monica, we could expect to sell the home for between $1,176,000 and $1,224,000, a return of between 17.6% and 22.4%. This gives a comparable upgrade to a million-dollar home in Beverly Hills a $50,000 advantage over the same job in Santa Monica at the low end, and a $33,600 advantage on the high end. For these reasons, we recommend PacDev prioritize residences in Beverly Hills and Long Beach to the extent that market conditions allow.
