@@ -1,0 +1,162 @@
+---
+title: "Velo.com A/B Test Analysis"
+author: "Natalie Benoy"
+date: "10/16/2021"
+output: 
+  html_document:
+    toc: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+
+```
+
+<!-- Note:   -->
+
+<!-- These instructions are commented out and will not display when you knit your RMarkdown document. -->
+
+<!-- - Change the information in the yaml header above:  title, author, data. -->
+<!-- - Make sure output is html_document. -->
+<!-- - Once you are finished coding, **run each chunk individually to make sure there are no errors**.  (If necessary fix your code.) Once your code is error-free, click "knit" on the menu above. Your document should compile to HTML, provided that you have output set to "html_document." -->
+<!-- - In the code chunk above ("setup") echo is set to TRUE.  This means that the code in your chunks will be displayed, along with the results, in your compiled document. -->
+
+## Load data and packages
+
+```{r}
+library(tidyverse)
+
+v <- read_csv("velo.csv")
+
+```
+
+## Questions
+
+### Q1
+
+Plot the distribution of `spent` by `checkout_system`.  Below you will use a t-test to compare these distributions statistically.  However, a t-test assumes normally distributed data.  Is that assumption valid in this case?  Why or why not?
+
+
+```{r}
+# create density plot of spent by checkout system
+ggplot(v, aes(spent, col = checkout_system)) + geom_density() + labs(title = "Amount spent by checkout system")
+
+```
+
+> Answer: The two distributions appear very similar. Each distribution is skewed toward the right, which is not surprising when the target variable (amount spent) can only take on a positive value.
+
+### Q2
+
+Create a summary table of `spent` by `checkout_system` with the following statistics:
+
+- n
+- mean
+- median
+- standard deviation
+- total 
+- the lower and upper bound of a 95% z-confidence interval for the mean.
+
+Your table should have 2 rows and 8 columns.
+
+```{r}
+# summary table of spent by checkout system, including 95% confidence intervals
+v %>%
+  group_by(checkout_system) %>%
+  summarize(n = n(),
+            mean = mean(spent),
+            median = median(spent),
+            sd = sd(spent),
+            total = sum(spent),
+            lower_bound = (mean - 1.96 * (sd/sqrt(n))) %>% round(3),
+            upper_bound = (mean + 1.96 * (sd/sqrt(n))) %>% round(3))
+
+```
+
+###  Q3
+
+Is average spending significantly higher in the treatment group?  (The treatment group consists in the customers using the new checkout system.)  Answer this question using a 2 sample, 2-tailed t-test with alpha set at .05. (Note that these are the default settings for the `t.test()` function when vectors are supplied for the x and y arguments.)
+
+```{r}
+# run 2-sample, 2-tailed t-test with standard alpha of .05
+t.test(filter(v, checkout_system == "old")$spent,
+       filter(v, checkout_system == "new")$spent,
+       alternative = c("two.sided"))
+```
+
+> Answer: With a p-value of 0.18, we do not reject the null hypothesis at the .05 significance level (p = .18 > .05). From this result, we cannot rule out the possibility that any differences in spending between the two treatment groups (old vs. new system) were purely due to random chance. The 95% confidence interval also includes 0, from which we can infer the same result.
+
+### Q4
+
+Create another summary table of `spent` by `checkout_system` and `device`.  Include these same statistics:
+
+- n
+- mean
+- median
+- standard deviation
+- the lower and upper bound of a 95% confidence interval for the mean.
+
+```{r}
+# summary table of spent by checkout_system and device
+v %>%
+  group_by(device, checkout_system) %>%
+  summarize(n = n(),
+            mean = mean(spent),
+            median = median(spent),
+            sd = sd(spent),
+            lower_bound = (mean - 1.96 * (sd/sqrt(n))) %>% round(3),
+            upper_bound = (mean + 1.96 * (sd/sqrt(n))) %>% round(3))
+
+# create another density plot for fun (not that helpful, would a different plot be better?)
+ggplot(v, aes(spent, col = checkout_system)) + geom_density() + facet_wrap(~device) + labs(title = "Amount spent by checkout system and device")
+```
+
+The table should have 4 rows and 8 columns.  
+
+Based on this information (as well as Sarah's observation, noted in the case description, that the glitch in the checkout system seemed more prevalent for mobile users), an additional statistical comparison of new and old among just mobile users seems warranted. Make that comparison using a 2 sample, 2-tailed t-test with alpha set at .05.  Report your results.
+
+
+```{r}
+# run 2-sample, 2-tailed t-test with standard alpha of .05
+t.test(filter(v, device == "mobile", checkout_system == "old")$spent,
+       filter(v, device == "mobile", checkout_system == "new")$spent,
+       alternative = c("two.sided"))
+
+```
+
+> Answer: With a p-value of .03, we reject the null hypothesis at the .05 significance level (p = .03 < .05). We reject the null hypothesis that any difference in spending is purely due to random chance in favor of the alternative hypothesis that the difference in spending is due to the independent variable, checkout_system, for instances where device = mobile. The 95% confidence interval also does not include 0, from which we can infer the same result.
+
+### Q5
+
+What course of action should Sarah recommend to the management at velo.com? Please incorporate your analytic results from above in fashioning an answer.
+
+> Regarding the results of the recent A/B test comparing performance of the new vs. old checkout systems in terms of spending, we recommend velo.com adopt the new checkout system for mobile users only. When comparing amount spent by users of the new vs. old systems across both computers and mobile devices, we found no significant difference in average spending (a t-test returned a p-value of .18, which was above our significance level threshold of .05). However, when comparing amount spent by users of the new vs. old systems on mobile devices only, we found mobile users of the new system spent significantly more on average than mobile users of the old system; this result was statistically significant (a t-test returned a p-value of .03, which was less than our significance level threshold of .05). As such, we can reject the idea that this observed increase in spending among mobile users happened due to pure chance, in favor of the conclusion that the increased spending among mobile users was due to the implementation of the new system.
+
+> Mobile users of the new system spent an average of $1967, while mobile users of the old system spent an average of $1932 during this period — an increase of 1.8%, and much closer to our desktop average of $1976. In addition, there is some evidence the new system results in fewer cart abandonments on mobile — in order to compare spending, the data used to compare the two systems only included users who actually completed a transaction. Since users were randomly assigned to either the new or old system, we should expect to see roughly an equivalent number of users in each condition in this dataset. However, we can see that while there are 11495 completed transactions observed for the new system on mobile, there are only 9663 for the old system during this period. This difference is not observed among computer users, where 11379 completed transactions were observed for new system, and 11522 for the old system.
+
+> We recommend keeping a close eye on the total monthly transactions for mobile users under the new system going forward as well as the average rate of cart abandonment, to further analyze whether the new system has offered statistically significant improvement on these metrics that have important implications for velo.com's overall revenue goals. 
+
+### Challenge
+
+One of the assumptions of a t-test is that the observations being compared are normally distributed.  This is what makes the t-test a so-called *parametric* statistical test: it uses the *parameters* of the normal distribution (mean and standard deviation) to detect a difference between groups. But what if the observations being compared are not normally distributed? The t-test is actually quite robust to violations of the normality assumption. This is a good thing because essentially no real world data is exactly normally distributed. Still, it may sometimes be prudent to double check t-test results with a *nonparametric* statistical test that makes no assumptions about the data.
+
+Two good options are the Kolmogorov-Smirnov test and the Mann-Whitney test as implemented in the `ks.test()` and the `wilcox.test()` R functions respectively.  Keep in mind that we use parametric tests for a reason: they are more sensitive. Results from these non-parametric tests will therefore be more conservative. Wikipedia has thorough sections on both tests.  You can read about the R functions here:
+
+```{r}
+?wilcox.test
+
+?ks.test()
+```
+
+Pick one of the tests.  Describe how it works (specifically:  what is the test statistic?) and then use it to re-analyze Question 4.  Are the results the same? Does this additional test change how you think about the velo.com case?
+
+```{r}
+# choosing the K-S test because it allows us to test whether one distribution is larger or smaller than another, as opposed to whether one distribution is merely different from another.
+```
+
+```{r}
+# run the test
+ks.test(filter(v, device == "mobile", checkout_system == "old")$spent,
+       filter(v, device == "mobile", checkout_system == "new")$spent,
+       alternative = c("greater"))
+```
+> the results are more or less the same, although the p-value given here is slightly smaller than the p-value returned by the t-test.
