@@ -1,0 +1,328 @@
+---
+title: "Kaggle_Final_Model"
+author: "IS-6489 Group 4 - Jason Ashby, Kyle Wiggins, Natalie Benoy, Tyler Kjesbo"
+date: "12/3/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+# Load data and packages
+
+```{r}
+library(tidyverse)
+library(caret)
+library(arm)
+library(ggplot2)
+library(glmnet)
+train <- read_csv("train.csv")
+test <- read_csv("test.csv")
+
+```
+
+# Impute missing values, transform NAs (both train and test sets)
+
+```{r}
+# deal with NAs in train data
+train_clean <- train %>%
+  dplyr::select(-PoolQC) %>%
+  dplyr::select(-Id) %>%
+   mutate(Alley = ifelse(is.na(Alley), "None", Alley),
+         BsmtQual = ifelse(is.na(BsmtQual), "None", BsmtQual),
+         BsmtCond = ifelse(is.na(BsmtCond), "None", BsmtCond),
+         LotFrontage = ifelse(is.na(LotFrontage), median(LotFrontage, na.rm=TRUE), LotFrontage),
+         Exterior1st = ifelse(is.na(Exterior1st), "Other", Exterior1st),
+         MasVnrType = ifelse(is.na(MasVnrType), "None", MasVnrType),
+         MasVnrArea = ifelse(is.na(MasVnrArea), median(MasVnrArea, na.rm=TRUE), MasVnrArea),
+         BsmtExposure = ifelse(is.na(BsmtExposure), "None", BsmtExposure),
+         BsmtFinType1 = ifelse(is.na(BsmtFinType1), "None", BsmtFinType1),
+         BsmtFinType2 = ifelse(is.na(BsmtFinType2), "None", BsmtFinType2),
+         Electrical = ifelse(is.na(Electrical), "None", Electrical),
+         FireplaceQu = ifelse(is.na(FireplaceQu), "None", FireplaceQu),
+         GarageType = ifelse(is.na(GarageType), "None", GarageType),
+         GarageYrBlt = ifelse(is.na(GarageYrBlt), median(GarageYrBlt, na.rm=TRUE), GarageYrBlt),
+         GarageFinish = ifelse(is.na(GarageFinish), "None", GarageFinish),
+         GarageCond = ifelse(is.na(GarageCond), "None", GarageCond),
+         GarageQual = ifelse(is.na(GarageQual), "None", GarageQual),
+         Fence = ifelse(is.na(Fence), "None", Fence),
+         MiscFeature = ifelse(is.na(MiscFeature), "None", MiscFeature),
+         MSSubClass = factor(MSSubClass))
+
+#deal with NAs in test data (must match what we did for train data) (fixed a GarageYrBlt value of 2027 because that's obviously incorrect)
+test_clean <- test %>%
+  dplyr::select(-PoolQC) %>%
+   mutate(Alley = ifelse(is.na(Alley), "None", Alley),
+         BsmtQual = ifelse(is.na(BsmtQual), "None", BsmtQual),
+         BsmtCond = ifelse(is.na(BsmtCond), "None", BsmtCond),
+         LotFrontage = ifelse(is.na(LotFrontage), median(LotFrontage, na.rm=TRUE), LotFrontage),
+         Exterior1st = ifelse(is.na(Exterior1st), "Other", Exterior1st),
+         Exterior2nd = ifelse(is.na(Exterior2nd), "Other", Exterior2nd),
+         MasVnrType = ifelse(is.na(MasVnrType), "None", MasVnrType),
+         MasVnrArea = ifelse(is.na(MasVnrArea), median(MasVnrArea, na.rm=TRUE), MasVnrArea),
+         BsmtExposure = ifelse(is.na(BsmtExposure), "None", BsmtExposure),
+         BsmtFinType1 = ifelse(is.na(BsmtFinType1), "None", BsmtFinType1),
+         BsmtFinType2 = ifelse(is.na(BsmtFinType2), "None", BsmtFinType2),
+         BsmtFinSF1 = ifelse(is.na(BsmtFinSF1), 0, BsmtFinSF1),
+         BsmtFinSF2 = ifelse(is.na(BsmtFinSF2), 0, BsmtFinSF2),
+         BsmtUnfSF = ifelse(is.na(BsmtUnfSF), 0, BsmtUnfSF),
+         BsmtFullBath = ifelse(is.na(BsmtFullBath), 0, BsmtFullBath),
+         BsmtHalfBath = ifelse(is.na(BsmtHalfBath), 0, BsmtHalfBath),
+         TotalBsmtSF = ifelse(is.na(TotalBsmtSF), 0, TotalBsmtSF),
+         FireplaceQu = ifelse(is.na(FireplaceQu), "None", FireplaceQu),
+         Functional = ifelse(is.na(Functional), "Typ", Functional),
+         GarageType = ifelse(is.na(GarageType), "None", GarageType),
+         GarageYrBlt = ifelse(is.na(GarageYrBlt), median(GarageYrBlt, na.rm=TRUE), GarageYrBlt),
+         GarageYrBlt = ifelse(GarageYrBlt > 2011, 2007, GarageYrBlt),
+         GarageFinish = ifelse(is.na(GarageFinish), "None", GarageFinish),
+         GarageCond = ifelse(is.na(GarageCond), "None", GarageCond),
+         GarageQual = ifelse(is.na(GarageQual), "None", GarageQual),
+         GarageCars = ifelse(is.na(GarageCars), 0, GarageCars),
+         GarageArea = ifelse(is.na(GarageArea), 0, GarageArea),
+         Fence = ifelse(is.na(Fence), "None", Fence),
+         MiscFeature = ifelse(is.na(MiscFeature), "None", MiscFeature),
+         SaleType = ifelse(is.na(SaleType), "WD", SaleType),
+         KitchenQual = ifelse(is.na(KitchenQual), "TA", KitchenQual),
+         Utilities = ifelse(is.na(Utilities), "AllPub", Utilities),
+         MSZoning = ifelse(is.na(MSZoning), "RL", MSZoning),
+         MSSubClass = ifelse(is.na(MSSubClass), "20", MSSubClass),
+         MSSubClass = factor(MSSubClass))
+
+# check for NAs
+colnames(train_clean)[apply(train_clean, 2, anyNA)]
+colnames(test_clean)[apply(test_clean, 2, anyNA)]
+
+```
+
+# Make sure factor levels are identical between train and test sets
+
+```{r}
+# turn all character variables into factors
+test_clean <- test_clean %>%
+  mutate_if(is.character,as.factor)
+
+train_clean <- train_clean %>%
+  mutate_if(is.character,as.factor)
+
+# make test factor levels equal to train factor levels
+test_clean <-  test_clean %>%
+  mutate(RoofMatl = factor(RoofMatl, levels = factor(train_clean$RoofMatl) %>% levels()),
+         Condition2 = factor(Condition2, levels = factor(train_clean$Condition2) %>% levels()),
+         Exterior1st = factor(Exterior1st, levels = c("AsbShng", "AsphShn", "BrkComm", "BrkFace", "CBlock", "CemntBd", "HdBoard", "ImStucc", "MetalSd", "Other", "Plywood", "PreCast", "Stone", "Stucco", "VinylSd", "Wd Sdng", "WdShing")),
+         HouseStyle = factor(HouseStyle, levels = factor(train_clean$HouseStyle) %>% levels()),
+         Exterior2nd = factor(Exterior2nd, levels = factor(train_clean$Exterior2nd) %>% levels()),
+         Heating = factor(Heating, levels = factor(train_clean$Heating) %>% levels()),
+         Electrical = factor(Electrical, levels = factor(train_clean$Electrical) %>% levels()),
+         GarageQual = factor(GarageQual, levels = factor(train_clean$GarageQual) %>% levels()),
+         MiscFeature = factor(MiscFeature, levels = factor(train_clean$MiscFeature) %>% levels()))
+
+# fix train data factors levels (looking at you, Exterior1st)
+train_clean <- train_clean %>%
+  mutate(MSSubClass = factor(MSSubClass, levels = factor(test_clean$MSSubClass) %>% levels()),
+         Exterior1st = factor(Exterior1st, levels = c("AsbShng", "AsphShn", "BrkComm", "BrkFace", "CBlock", "CemntBd", "HdBoard", "ImStucc", "MetalSd", "Other", "Plywood", "PreCast", "Stone", "Stucco", "VinylSd", "Wd Sdng", "WdShing")))
+
+# check for NAs again
+colnames(train_clean)[apply(train_clean, 2, anyNA)]
+colnames(test_clean)[apply(test_clean, 2, anyNA)]
+
+```
+
+# Create new combined dataset with some redundant variables combined
+
+## Removes PoolArea, homes above 100,000 LotArea and MiscVal over 10,000 in train set (removes 5 total observations)
+
+```{r}
+# start by combining variables (train and test sets)
+train_comb <- train_clean %>%
+  filter(LotArea < 100000, MiscVal < 10000) %>%
+  mutate(LotArea = log(LotArea),
+         GrLivArea = log(GrLivArea),
+         LotFrontage = log(LotFrontage),
+         HasGarage = ifelse(GarageArea > 0, "Yes", "No"),
+         HasPool = ifelse(PoolArea > 0, "Yes", "No"),
+         HasFireplace = ifelse(Fireplaces > 0, "Yes", "No"),
+         HasBsmt = ifelse(TotalBsmtSF > 0, "Yes", "No"),
+         BsmtBath = BsmtFullBath + (BsmtHalfBath * 0.5),
+         Bath = FullBath + (HalfBath * 0.5),
+         Overall = (OverallQual + OverallCond) / 2,
+         TotalSF = (TotalBsmtSF + `1stFlrSF` + `2ndFlrSF`),
+         TotalPorch = (OpenPorchSF + EnclosedPorch + ScreenPorch + WoodDeckSF + `3SsnPorch`),
+         ExterQual = case_when(ExterQual == "Ex" ~ 5,
+                               ExterQual == "Gd" ~ 4,
+                               ExterQual == "TA" ~ 3,
+                               ExterQual == "Fa" ~ 2,
+                               ExterQual == "Po" ~ 1),
+         ExterCond = case_when(ExterCond == "Ex" ~ 5,
+                               ExterCond == "Gd" ~ 4,
+                               ExterCond == "TA" ~ 3,
+                               ExterCond == "Fa" ~ 2,
+                               ExterCond == "Po" ~ 1),
+         Exterior = (ExterQual + ExterCond) / 2,
+         GarageQual = case_when(GarageQual == "Ex" ~ 5,
+                                GarageQual == "Gd" ~ 4,
+                                GarageQual == "TA" ~ 3,
+                                GarageQual == "Fa" ~ 2,
+                                GarageQual == "Po" ~ 1,
+                                GarageQual == "None" ~ 0),
+         GarageCond = case_when(GarageCond == "Ex" ~ 5,
+                                GarageCond == "Gd" ~ 4,
+                                GarageCond == "TA" ~ 3,
+                                GarageCond == "Fa" ~ 2,
+                                GarageCond == "Po" ~ 1,
+                                GarageCond == "None" ~ 0),
+         Garage = (GarageQual + GarageCond) / 2,
+         BsmtQual = case_when(BsmtQual == "Ex" ~ 5,
+                              BsmtQual == "Gd" ~ 4,
+                              BsmtQual == "TA" ~ 3,
+                              BsmtQual == "Fa" ~ 2,
+                              BsmtQual == "Po" ~ 1,
+                              BsmtQual == "None" ~ 0),
+         BsmtCond = case_when(BsmtCond == "Ex" ~ 5,
+                              BsmtCond == "Gd" ~ 4,
+                              BsmtCond == "TA" ~ 3,
+                              BsmtCond == "Fa" ~ 2,
+                              BsmtCond == "Po" ~ 1,
+                              BsmtCond == "None" ~ 0),
+         BsmtExposure = case_when(BsmtExposure == "Gd" ~ 4,
+                                  BsmtExposure == "Av" ~ 3,
+                                  BsmtExposure == "Mn" ~ 2,
+                                  BsmtExposure == "No" ~ 1,
+                                  BsmtExposure == "None" ~ 0),
+         Bsmt = (BsmtQual + BsmtCond + BsmtExposure) / 3)
+
+columnsToRemove <- c("BsmtFullBath", "BsmtHalfBath", "FullBath", "HalfBath",
+                     "OverallQual", "OverallCond", "ExterCond", "ExterQual", "GarageQual", "GarageCond", "BsmtQual", "BsmtCond", "BsmtExposure", "1stFlrSF", "2ndFlrSF", "OpenPorchSF", "EnclosedPorch", "ScreenPorch", "WoodDeckSF", "3SsnPorch", "GarageArea", "PoolArea", "Fireplaces")
+
+train_comb <- train_comb %>%
+  dplyr::select(-all_of(columnsToRemove))
+
+# repeat for test set (do not filter to remove any outliers or Kaggle will get mad at you!)
+test_comb <- test_clean %>%
+  mutate(LotArea = log(LotArea),
+         GrLivArea = log(GrLivArea),
+         LotFrontage = log(LotFrontage),
+         HasGarage = ifelse(GarageArea > 0, "Yes", "No"),
+         HasPool = ifelse(PoolArea > 0, "Yes", "No"),
+         HasFireplace = ifelse(Fireplaces > 0, "Yes", "No"),
+         HasBsmt = ifelse(TotalBsmtSF > 0, "Yes", "No"),
+         BsmtBath = BsmtFullBath + (BsmtHalfBath * 0.5),
+         Bath = FullBath + (HalfBath * 0.5),
+         Overall = (OverallQual + OverallCond) / 2,
+         TotalSF = (TotalBsmtSF + `1stFlrSF` + `2ndFlrSF`),
+         TotalPorch = (OpenPorchSF + EnclosedPorch + ScreenPorch + WoodDeckSF + `3SsnPorch`),
+         ExterQual = case_when(ExterQual == "Ex" ~ 5,
+                               ExterQual == "Gd" ~ 4,
+                               ExterQual == "TA" ~ 3,
+                               ExterQual == "Fa" ~ 2,
+                               ExterQual == "Po" ~ 1),
+         ExterCond = case_when(ExterCond == "Ex" ~ 5,
+                               ExterCond == "Gd" ~ 4,
+                               ExterCond == "TA" ~ 3,
+                               ExterCond == "Fa" ~ 2,
+                               ExterCond == "Po" ~ 1),
+         Exterior = (ExterQual + ExterCond) / 2,
+         GarageQual = case_when(GarageQual == "Ex" ~ 5,
+                                GarageQual == "Gd" ~ 4,
+                                GarageQual == "TA" ~ 3,
+                                GarageQual == "Fa" ~ 2,
+                                GarageQual == "Po" ~ 1,
+                                GarageQual == "None" ~ 0),
+         GarageCond = case_when(GarageCond == "Ex" ~ 5,
+                                GarageCond == "Gd" ~ 4,
+                                GarageCond == "TA" ~ 3,
+                                GarageCond == "Fa" ~ 2,
+                                GarageCond == "Po" ~ 1,
+                                GarageCond == "None" ~ 0),
+         Garage = (GarageQual + GarageCond) / 2,
+         BsmtQual = case_when(BsmtQual == "Ex" ~ 5,
+                              BsmtQual == "Gd" ~ 4,
+                              BsmtQual == "TA" ~ 3,
+                              BsmtQual == "Fa" ~ 2,
+                              BsmtQual == "Po" ~ 1,
+                              BsmtQual == "None" ~ 0),
+         BsmtCond = case_when(BsmtCond == "Ex" ~ 5,
+                              BsmtCond == "Gd" ~ 4,
+                              BsmtCond == "TA" ~ 3,
+                              BsmtCond == "Fa" ~ 2,
+                              BsmtCond == "Po" ~ 1,
+                              BsmtCond == "None" ~ 0),
+         BsmtExposure = case_when(BsmtExposure == "Gd" ~ 4,
+                                  BsmtExposure == "Av" ~ 3,
+                                  BsmtExposure == "Mn" ~ 2,
+                                  BsmtExposure == "No" ~ 1,
+                                  BsmtExposure == "None" ~ 0),
+         Bsmt = (BsmtQual + BsmtCond + BsmtExposure) / 3)
+
+test_comb <- test_comb %>%
+  dplyr::select(-all_of(columnsToRemove))
+
+```
+
+# Use elastic net to fit the model, using combined variable dataset above
+
+## Kaggle score: 0.125 Est. out-of-sample Rsquared = 0.908, RMSE = 0.121. In-sample RMSE = 463, multiple Rsquared = 0.857.
+
+```{r}
+# fit elastic net model using caret
+set.seed(123)
+elnet_mod <- train(log(SalePrice) ~ . + LotArea:MSZoning + LotArea:Neighborhood + GrLivArea:Neighborhood + TotalSF:Neighborhood,
+                 data = train_comb,
+                 preProcess = c("center", "scale"),
+                 method = "glmnet",
+                 trControl = trainControl("cv", number = 10),
+                 tuneLength = 10)
+
+# look at final variables chosen
+elnet_mod$finalModel$tuneValue
+coef(elnet_mod$finalModel, elnet_mod$finalModel$tuneValue$lambda)
+
+# plot the model
+plot(elnet_mod$finalModel)
+
+# get residuals
+res <-  resid(elnet_mod$finalModel)
+
+# plot residuals vs fitted
+plot(fitted(elnet_mod), res)
+
+# deploy elastic net model on train data to calculate in-sample Rsquared and RMSE
+train_no_sale <- train_comb %>%
+  dplyr::select(-SalePrice)
+
+in_sample_performance <- predict(elnet_mod, newdata = train_no_sale)
+
+rmse <- function(actual, fitted){        #RMSE function
+  sqrt(mean((actual - fitted)^2)/1459)
+}
+
+rmse(actual = train_comb$SalePrice, fitted = in_sample_performance)
+
+rmse(train_comb$SalePrice, exp(fitted(elnet_mod))) # RMSE = 466
+
+(rsq <- cor(train_comb$SalePrice, in_sample_performance)^2) # multiple Rsquared = 0.857
+
+# make a table of in-sample & out-of-sample Rsquared, RMSE
+table <- matrix(c(0.857, 466, 0.908, 0.121), ncol=2, byrow=TRUE)
+colnames(table) <- c("R-squared", "RMSE")
+rownames(table) <- c("In sample", "Out of sample")
+
+table
+
+# predict from elnet model
+elnet_mod_predict <- predict(elnet_mod, newdata = test_comb)
+
+# Create data frame with only Id and SalePrice columns
+elnet_mod_predictions <- data.frame(Id = test_comb$Id,
+                                 SalePrice = exp(elnet_mod_predict))
+
+# See if that looks right
+head(elnet_mod_predictions)
+
+# Check if there are any NAs
+all(complete.cases(elnet_mod_predictions))
+
+# Export prediction data.frame as a .csv file.
+write.csv(elnet_mod_predictions, "elnet_predictions.csv")
+
+```

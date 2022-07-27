@@ -1,0 +1,164 @@
+---
+title: "Analysis of Employee Attrition at BioImplants"
+author: "Natalie Benoy"
+date: "11/20/21"
+output: 
+  html_document:
+    toc: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+
+```
+
+<!-- Note:   -->
+
+<!-- These instructions are commented out and will not display when you knit your RMarkdown document. -->
+
+<!-- - Change the information in the yaml header above:  title, author, data. -->
+<!-- - Make sure output is html_document. -->
+<!-- - Once you are finished coding, **run each chunk individually to make sure there are no errors**.  (If necessary fix your code.) Once your code is error-free, click "knit" on the menu above. Your document should compile to HTML, provided that you have output set to "html_document." -->
+<!-- - In the code chunk above ("setup") echo is set to TRUE.  This means that the code in your chunks will be displayed, along with the results, in your compiled document. -->
+
+## Load data and packages
+
+
+```{r}
+library(tidyverse)
+library(caret)
+
+bi <- read.csv("bioimplants.csv") # In this case make sure to use read.csv()
+
+summary(bi)
+
+glimpse(bi)
+
+```
+
+## Questions
+
+### Q1
+
+What is the attrition rate for employees at BI?  (A rate, remember, is expressed as a proportion.)
+
+1. Calculate overall attrition rate. 
+
+2. Create a summary table of conditional attrition rates by department and job role. (The table should have 3 columns:  department, job role, and the calculated conditional attrition rate.)  Sort this table by attrition rate in descending order. 
+
+```{r}
+# Baseline attrition rate
+bi %>% 
+  summarize(attrition = mean(attrition == "Yes"))
+
+# attrition rate by department and job role
+bi %>%
+  group_by(department, job_role) %>%
+  summarize(attrition_rate = mean(attrition == "Yes")) %>%
+  arrange(desc(attrition_rate), by_group = TRUE)
+
+```
+
+### Q2
+
+Fit a logistic regression model of attrition using all the predictors. (Note: employee_number is NOT a predictor!)
+
+1.  Report in-sample accuracy for this model with a decision threshold of .5.  (Accuracy is defined as the proportion of correct predictions.)
+
+2. Report estimated out-of-sample accuracy.  It will be easiest to get this from caret, using the `train()` function with method = "glm." The information caret prints to the screen, remember, is the cross-validation estimate of the model's out-of-sample performance.
+
+3. Comment on whether the model offers an improvement over predicting with the majority class.
+
+
+```{r}
+set.seed(123)
+
+# get rid of employee_number
+bi <- bi %>%
+  select(-employee_number)
+
+# Fit logistic model with caret
+attrition_mod <- train(attrition ~ ., 
+                   data = bi,
+                   preProcess = c("center", "scale"),
+                   method = "glm")
+
+summary(attrition_mod)
+
+# report in-sample accuracy with standard threshold of .5
+(predict(attrition_mod, newdata = bi) == bi$attrition) %>% 
+  mean()
+
+# report estimated out-of-sample accuracy (thanks caret)
+attrition_mod
+
+```
+
+> Answer: Our model's in-sample accuracy is 0.89. Estimated out-of-sample accuracy is 0.87. Both of these are an improvement over the baseline accuracy rate of 0.16 (if we predicted every employee would quit, we would be correct 16% of the time).
+
+### Q3
+
+Refit the model without `department.`
+
+1. Which of the centered and scaled predictors has the largest effect size? 
+
+2. Interpret the coefficient with the largest effect size.
+
+```{r}
+# Refit the model
+set.seed(123)
+
+bi_2 <- bi %>%
+  select(-department)
+
+attrition_mod2 <- train(attrition ~ ., 
+                   data = bi_2,
+                   preProcess = c("center", "scale"),
+                   method = "glm")
+
+summary(attrition_mod2)
+```
+
+> Answer: The two centered and scaled predictors with the largest effect sizes are overtime = yes and business travel = frequently. In other words, a change from the reference level of "no overtime" to the level "yes overtime" is associated with a 0.89 average increase in the log odds of attrition, and a change in business travel from the "non travel" reference level to "frequent travel" is associated with a 0.75 average increase in the log odds of attrition, all other things equal.
+
+### Q4
+
+Based on the above logistic regression model (and, specifically, on the coefficient with the largest effect size that you identified above), **how might company policy be changed to reduce employee attrition**?  
+
+1. Describe your proposed policy change.
+2. Estimate and explain the change in churn probability associated with that policy change.
+
+```{r}
+set.seed(123)
+
+# Logistic regression model
+attrition_mod2 <- train(attrition ~ ., 
+                   data = bi_2,
+                   preProcess = c("center", "scale"),
+                   method = "glm")
+
+# predict attrition for no overtime
+predict(attrition_mod2, 
+        newdata = mutate(bi_2, over_time = "No"),
+        type = "prob")[,2] %>%
+  mean()
+
+# predict attrition for yes overtime
+predict(attrition_mod2, 
+        newdata = mutate(bi_2, over_time = "Yes"),
+        type = "prob")[,2] %>%
+  mean()
+
+#calculate the predicted change in attrition rate going from "yes overtime" to "no overtime"
+0.313 - 0.103
+```
+
+> Answer: A policy change from current levels of overtime to no overtime is expected to reduce the average employee attrition rate by 21%. In other words, if BioImplants can balance its employees' workloads such that employees are not expected to work more than 40 hours per week, the overall employee attrition rate could be reduced by 21% on average.
+
+### Q5
+
+What should Angelica say in her report? Please include quantitative details from your answers to the questions above.
+
+> Answer: Employee attrition is a costly problem for any business; with a company-wide attrition rate of 16%, BioImplants is no exception. An analysis of data from BioImplants' HR department revealed that attrition is unequal across departments and roles, with the highest rate of attrition, at 40%, observed among Sales Representatives, and a much lower rate, at 2.5%, observed in the Research Director role. To reduce costs associated with attrition, we recommend BioImplants enact a policy change to eliminate overtime for the Sales Representative position.
+
+> A logistic regression model trained on a sample of HR data from 2016 indicated the single largest predictor of employee attrition was whether the employee worked overtime. This model had an in-sample accuracy rate of 89%, and an out-of-sample accuracy rate of 87%, indicating the model should generalize well to new data. Using this model, we found employees who worked overtime had an expected average attrition rate of 31%, compared to an expected average attrition rate of only 10% among employees who did not work overtime. Based on this analysis, if BioImplants were to eliminate employee overtime across the board, we would expect a reduction in overall employee attrition by 21%. As the Sales Representative position is one with both a disproportionately high level of turnover and substantial costs associated with attrition, we expect a policy change to eliminate overtime for the Sales Representative position will bring the greatest cost savings for BioImplants, and should therefore serve as a pilot for the overtime policy change. In addition, frequent travel was also associated with a fairly strong increase in employee attrition; a reduction in the amount of employee travel, especially among Sales Representatives, would be another possible avenue to pursue to bring down attrition rates at BioImplants.

@@ -1,0 +1,140 @@
+---
+title: "Conley Fisheries Simulation and Analysis"
+author: "Natalie Benoy"
+date: "10/09/2021"
+output: 
+  html_document:
+    toc: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+
+```
+
+<!-- Note:   -->
+
+<!-- These instructions are commented out and will not display when you knit your RMarkdown document. -->
+
+<!-- - Change the information in the yaml header above:  title, author, data. -->
+<!-- - Make sure output is html_document. -->
+<!-- - Once you are finished coding, **run each chunk individually to make sure there are no errors**.  (If necessary fix your code.) Once your code is error-free, click "knit" on the menu above. Your document should compile to HTML, provided that you have output set to "html_document." -->
+<!-- - In the code chunk above ("setup") echo is set to TRUE.  This means that the code in your chunks will be displayed, along with the results, in your compiled document. -->
+
+## Load packages and create empty data frame
+
+```{r}
+# Load packages
+library(tidyverse) 
+
+# Define n
+n <- 1000
+
+# Empty data frame for 1000 simulated days
+data <- data.frame(day = seq(1:n),
+                demand = NA, # demand in Rockport
+                quantity = NA, # quantity sold
+                price = NA, # price per pound
+                cost = 10000, # cost of daily operations
+                earnings = NA)
+
+head(data)
+
+```
+
+
+## Questions
+
+Use this code chunk to simulate demand, quantity and price, and then compute earnings. Make sure to use set.seed(123) before running any random process to ensure that your results are reproducible!
+
+```{r}
+# simulate values for 1000 days
+set.seed(123)
+boat_earnings <- data %>%
+  mutate(demand = sample(x = c(0, 1000, 2000, 3000, 4000, 5000, 6000), size = n, replace = T, prob = c(.02, .03, .05, .08, .33, .29, .2)),
+         quantity = ifelse(demand > 3500, 3500, demand),
+         price = rnorm(n = n, mean = 3.65, sd = .2),
+         earnings = price * quantity - cost)
+
+head(boat_earnings)
+```
+
+
+### Q1
+
+Plot simulated earnings.
+
+```{r}
+# create probability density plot of simulated earnings
+ggplot(boat_earnings, aes(x = earnings)) + geom_density() + geom_vline(xintercept = 1879.699, color = "blue", linetype = "dashed") + labs(title = "Distribution of simulated earnings at Rockport per boat", subtitle = "dashed line = average earnings ($1880)")
+
+# summarize earnings (for fun)
+boat_earnings$earnings %>%
+  summary()
+```
+
+### Q2
+
+What is P(F > 1375)?
+
+```{r}
+# probability of earning more in Rockport than in Gloucester, by boat
+(boat_earnings$earnings > 1375) %>%
+  mean()
+```
+
+> Because the earnings when selling in Gloucester port is $1375 per boat, the probability that Clint's boats will earn more from their catch (earnings > 1375) by selling in Rockport than in Gloucester is 82.6%.
+
+### Q3
+
+What is P(F < 0)
+
+```{r}
+# probability of experiencing a net loss, per boat
+(boat_earnings$earnings < 0) %>%
+  mean()
+```
+
+> Based on the simulated data, the probability of Clint's boats experiencing a net loss when selling in Rockport is 9.9%.
+
+### Q4
+
+What is the expected value (mean) of F?
+
+```{r}
+# mean earnings per boat
+boat_earnings$earnings %>%
+  mean()
+```
+
+> Each of Clint's boats can expect to earn $1879.70 in profit, on average, when selling their daily catch in Rockport.
+
+### Q5
+
+What is your advice to Clint Conley?  Write one paragraph in which you argue a position. In your answer please incorporate the quantitative details from your simulation, and consider in particular the trade-off between risk and reward.
+
+> Clint Conley's goals for Conley Fisheries are to make profit, and he is not averse to risk if it makes economic sense. As such, we recommend that Clint instruct his fleet to take their catch to Rockport instead of Gloucester. If one of Clint's boats sells its catch in Gloucester, its expected profit is $1375 per boat (3500 pounds of codfish * $3.25 per pound - $10,000 daily operating expenses). In contrast, our simulation finds the expected average profit per boat in Rockport is $1880 -- an increase in profit of $505 per boat, on average. Furthermore, our simulated distribution of earnings shows that boats selling their catch in Rockport will earn more than they would selling in Gloucester (earnings > $1375 per boat) 82.6% of the time. While the data do indicate there will be instances in which boats earn less selling in Rockport than they would have in Gloucester (17.4% of the time), and will even realize a net loss (earnings < 0, with the max loss per boat being $10,000) 10% of the time, on average the data make the decision clear: Rockport is more profitable than Gloucester. As Conley Fisheries commands a fleet of 50, average daily profit per fleet is expected to be $94,000 (50 * $1880) selling only at Rockport, compared to $68,750 (50 * $1375) selling only at Gloucester.
+
+> Were Conley Fisheries to become more risk-averse, we might suggest Clint instruct half the fleet to sell at Rockport, and half at Gloucester. While this would reduce expected average daily profit by fleet to $81,375 (25 * $1375 + 25 * $1880), it would also cut down on the risk inherent to selling in Rockport.
+
+### Challenge
+
+This question is optional and not graded!
+
+Clint Conley is worried about an economic recession.  He thinks that a recession would impact prices more at Rockport than at Gloucester, which, as the larger and better established market, is probably less vulnerable to macroeconomic changes.  How much would the probability distribution of price need to change at Rockport in order to change your advice about which port he should use?
+
+```{r}
+# change the standard deviation of price up to 2 & check the new mean earnings
+set.seed(123)
+boat_earnings2 <- data %>%
+  mutate(demand = sample(x = c(0, 1000, 2000, 3000, 4000, 5000, 6000), size = n, replace = T, prob = c(.02, .03, .05, .08, .33, .29, .2)),
+         quantity = ifelse(demand > 3500, 3500, demand),
+         price = rnorm(n = n, mean = 3.65, sd = 2),
+         earnings = price * quantity - cost)
+
+boat_earnings2$earnings %>%
+  mean()
+```
+
+> As long as the mean price at Rockport does not decrease and the distribution of demand remains the same, an increase in the volatility of price (measured by standard deviation) appears to only further increase the average expected earnings from selling in Rockport.
+
